@@ -96,7 +96,7 @@ func generateInterface(prefixValues PrefixValues) generation.InterfaceGenerator 
 func generateStruct(iface *types.Interface, instrumentedStructName string) jen.Code {
 	fields := []jen.Code{
 		jen.Qual(iface.ImportPath, iface.Name),
-		jen.Id("reporter").Qual("github.com/efritz/imperial/red", "Reporter"),
+		jen.Id("reporter").Op("*").Qual("github.com/efritz/imperial/red", "Reporter"),
 	}
 
 	return jen.
@@ -108,7 +108,7 @@ func generateStruct(iface *types.Interface, instrumentedStructName string) jen.C
 func generateConstructor(iface *types.Interface, instrumentedStructName, constructorName string) jen.Code {
 	params := []jen.Code{
 		jen.Id("inner").Qual(iface.ImportPath, iface.Name),
-		jen.Id("reporter").Qual("github.com/efritz/imperial/red", "Reporter"),
+		jen.Id("reporter").Op("*").Qual("github.com/efritz/imperial/red", "Reporter"),
 	}
 
 	return generation.GenerateFunction(
