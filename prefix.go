@@ -38,6 +38,10 @@ func (v *PrefixValues) Set(value string) error {
 	return nil
 }
 
+func (v *PrefixValues) IsCumulative() bool {
+	return true
+}
+
 func (v *PrefixValues) String() string {
 	return ""
 }
