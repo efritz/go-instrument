@@ -20,7 +20,7 @@ Usage coming soon.
 The following flags are defined by the binary.
 
 | Name          | Short Flag | Description  |
-| --------- --- | ---------- | ------------ |
+| ------------- | ---------- | ------------ |
 | package       | p          | The name of the generated package. Is the name of target directory if dirname or filename is supplied by default. |
 | prefix        |            | A prefix used in the name of each instrumented struct. Should be TitleCase by convention. |
 | interfaces    | i          | A whitelist of interfaces to generate given the import paths. |
