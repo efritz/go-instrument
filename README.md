@@ -94,22 +94,22 @@ An instrumented version of an interface is initialized via a constructor that
 takes a concrete instance of the underlying interface as well as an instance of
 a [RED Metric Reporter](https://github.com/efritz/imperial/tree/master/red).
 
-It is required that this reproter be initialized to configurations for each of
+It is required that this reporter be initialized to configurations for each of
 metric prefixes that were supplied at generation time. For example, a valid RED
-reporter for the example abovce is given below.
+reporter for the example above is given below.
 
 ```go
 import "github.com/efritz/imperial/red"
 
-func makeInstrumentedClient(client deepjoy.CLient, reporter imperial.Reporter) {
-    redisPrefixConfig:=red.NewPrefixConfig(
+func makeInstrumentedClient(client deepjoy.Client, reporter imperial.Reporter) {
+    redisPrefixConfig := red.NewPrefixConfig(
         // Report operation durations in these buckets (in seconds)
         red.WithPrefixBuckets([]float64{0.01, 0.1, 0.5, 1}),
     )
 
     // Create red reporter with `redis` prefix configuration
     redReporter := red.NewReporter(
-        metricReporter,
+        reporter,
         red.WithPrefixConfig("redis", redisPrefixConfig),
     )
 
