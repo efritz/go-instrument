@@ -138,10 +138,10 @@ func generateInstrumentedMethod(iface *types.Interface, method *types.Method, in
 		}
 	}
 
-	emitAttemptMetric := jen.
+	emitRequestMetric := jen.
 		Id("i").
 		Dot("reporter").
-		Dot("ReportAttempt").
+		Dot("ReportRequest").
 		Call(jen.Lit(prefix))
 
 	emitErrorMetric := jen.
@@ -171,7 +171,7 @@ func generateInstrumentedMethod(iface *types.Interface, method *types.Method, in
 		iface.ImportPath,
 		method,
 		jen.Id("start").Op(":=").Qual("time", "Now").Call(),
-		emitAttemptMetric,
+		emitRequestMetric,
 		generation.GenerateDecoratedCall(method, jen.Id("i").Dot(iface.Name).Dot(method.Name)),
 		setDuration,
 		emitErrorMetric,
