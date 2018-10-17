@@ -8,7 +8,6 @@ import (
 	"go/token"
 	gotypes "go/types"
 	"log"
-	"os"
 	"strings"
 
 	"github.com/alecthomas/kingpin"
@@ -49,8 +48,7 @@ func main() {
 	}
 
 	if err := command.Run(Name, Description, Version, types.GetInterface, generate, command.WithArgHook(argHook)); err != nil {
-		fmt.Printf("error: %s\n", err.Error())
-		os.Exit(1)
+		log.Fatalf("error: %s\n", err.Error())
 	}
 }
 
