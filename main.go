@@ -7,6 +7,7 @@ import (
 	"go/parser"
 	"go/token"
 	gotypes "go/types"
+	"log"
 	"os"
 	"strings"
 
@@ -24,6 +25,11 @@ const (
 	Description = "go-instrument generates instrumented decorators for interfaces."
 	Version     = "0.1.0"
 )
+
+func init() {
+	log.SetFlags(0)
+	log.SetPrefix("go-instrument: ")
+}
 
 func main() {
 	var prefixValues *PrefixValues
