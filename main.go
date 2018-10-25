@@ -80,7 +80,7 @@ func main() {
 		)
 	}
 
-	if err := command.Run(name, description, version, types.GetType, generate, command.WithArgHook(argHook)); err != nil {
+	if err := command.Run(name, description, version, types.GetInterface, generate, command.WithArgHook(argHook)); err != nil {
 		log.Fatalf("error: %s\n", err.Error())
 	}
 }
