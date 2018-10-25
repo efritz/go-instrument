@@ -18,11 +18,43 @@ import (
 	"github.com/efritz/go-genlib/types"
 )
 
+type (
+	wrappedInterface struct {
+		*types.Interface
+		prefix                 string
+		titleName              string
+		instrumentedStructName string
+		wrappedMethods         []*wrappedMethod
+	}
+
+	wrappedMethod struct {
+		*types.Method
+		iface  *types.Interface
+		prefix string
+	}
+
+	topLevelGenerator func(*wrappedInterface) jen.Code
+	methodGenerator   func(*wrappedInterface, *wrappedMethod) jen.Code
+)
+
 const (
-	Name        = "go-instrument"
-	PackageName = "github.com/efritz/go-instrument"
-	Description = "go-instrument generates instrumented decorators for interfaces."
-	Version     = "0.1.0"
+	name        = "go-instrument"
+	packageName = "github.com/efritz/go-instrument"
+	description = "go-instrument generates instrumented decorators for interfaces."
+	version     = "0.1.0"
+
+	instrumentedStructFormat = "Instrumented%s%s"
+)
+
+var (
+	topLevelGenerators = []topLevelGenerator{
+		generateStruct,
+		generateConstructor,
+	}
+
+	methodGenerators = []methodGenerator{
+		generateInstrumentedMethod,
+	}
 )
 
 func init() {
@@ -39,7 +71,8 @@ func main() {
 
 	generate := func(ifaces []*types.Interface, opts *command.Options) error {
 		return generation.Generate(
-			PackageName,
+			packageName,
+			version,
 			ifaces,
 			opts,
 			generateFilename,
@@ -47,7 +80,7 @@ func main() {
 		)
 	}
 
-	if err := command.Run(Name, Description, Version, types.GetInterface, generate, command.WithArgHook(argHook)); err != nil {
+	if err := command.Run(name, description, version, types.GetType, generate, command.WithArgHook(argHook)); err != nil {
 		log.Fatalf("error: %s\n", err.Error())
 	}
 }
@@ -58,82 +91,129 @@ func generateFilename(name string) string {
 
 func generateInterface(prefixValues PrefixValues) generation.InterfaceGenerator {
 	return func(file *jen.File, iface *types.Interface, prefix string) {
-		prefixes := []string{}
-		for _, prefixValue := range prefixValues {
-			prefixes = append(prefixes, prefixValue.Prefix)
-		}
-
 		var (
 			titleName              = title(iface.Name)
-			instrumentedStructName = fmt.Sprintf("Instrumented%s%s", prefix, titleName)
-			constructorName        = fmt.Sprintf("New%s", instrumentedStructName)
+			instrumentedStructName = fmt.Sprintf(instrumentedStructFormat, prefix, titleName)
+			wrappedInterface       = wrapInterface(iface, prefix, titleName, instrumentedStructName, prefixValues)
 		)
 
-		file.Add(generateStruct(iface, instrumentedStructName))
-
-		methods := []jen.Code{
-			generateConstructor(iface, instrumentedStructName, constructorName),
-		}
-
-		for _, method := range iface.Methods {
-			for _, prefixValue := range prefixValues {
-				if prefixValue.Pattern.MatchString(method.Name) {
-					methods = append(methods, generateInstrumentedMethod(
-						iface,
-						method,
-						instrumentedStructName,
-						prefixValue.Prefix,
-					))
-
-					break
-				}
-			}
-		}
-
-		for _, method := range methods {
-			file.Add(method)
+		for _, generator := range topLevelGenerators {
+			file.Add(generator(wrappedInterface))
 			file.Line()
+		}
+
+		for _, method := range wrappedInterface.wrappedMethods {
+			for _, generator := range methodGenerators {
+				file.Add(generator(wrappedInterface, method))
+				file.Line()
+			}
 		}
 	}
 }
 
-func generateStruct(iface *types.Interface, instrumentedStructName string) jen.Code {
+func wrapInterface(iface *types.Interface, prefix, titleName, instrumentedStructName string, prefixValues PrefixValues) *wrappedInterface {
+	wrapped := &wrappedInterface{
+		Interface:              iface,
+		prefix:                 prefix,
+		titleName:              titleName,
+		instrumentedStructName: instrumentedStructName,
+	}
+
+	for _, method := range iface.Methods {
+		for _, prefixValue := range prefixValues {
+			if !prefixValue.Pattern.MatchString(method.Name) {
+				continue
+			}
+
+			method := wrapMethod(iface, method, prefixValue.Prefix)
+			wrapped.wrappedMethods = append(wrapped.wrappedMethods, method)
+			break
+		}
+	}
+
+	return wrapped
+}
+
+func wrapMethod(iface *types.Interface, method *types.Method, prefix string) *wrappedMethod {
+	m := &wrappedMethod{
+		Method: method,
+		iface:  iface,
+		prefix: prefix,
+	}
+
+	return m
+}
+
+//
+// Instrumented Struct Generation
+
+func generateStruct(iface *wrappedInterface) jen.Code {
+	comment := generation.GenerateComment(
+		1,
+		"%s is an wrapper around the %s interface (from the package %s) that emits request, duration, and error metrics.",
+		iface.instrumentedStructName,
+		iface.Name,
+		iface.ImportPath,
+	)
+
 	fields := []jen.Code{
 		jen.Qual(iface.ImportPath, iface.Name),
 		jen.Id("reporter").Op("*").Qual("github.com/efritz/imperial/red", "Reporter"),
 	}
 
-	return jen.
+	return comment.
 		Type().
-		Id(instrumentedStructName).
+		Id(iface.instrumentedStructName).
 		Struct(fields...)
 }
 
-func generateConstructor(iface *types.Interface, instrumentedStructName, constructorName string) jen.Code {
+//
+// Constructor Generation
+
+func generateConstructor(iface *wrappedInterface) jen.Code {
+	name := fmt.Sprintf("New%s", iface.instrumentedStructName)
+
+	comment := generation.GenerateComment(
+		1,
+		"%s creates a new instrumented version of the %s interface.",
+		name,
+		iface.Name,
+	)
+
 	params := []jen.Code{
 		jen.Id("inner").Qual(iface.ImportPath, iface.Name),
 		jen.Id("reporter").Op("*").Qual("github.com/efritz/imperial/red", "Reporter"),
 	}
 
-	return generation.GenerateFunction(
-		constructorName,
+	decl := generation.GenerateFunction(
+		name,
 		params,
-		[]jen.Code{jen.Op("*").Id(instrumentedStructName)},
-		jen.Return().Op("&").Id(instrumentedStructName).Values(
+		[]jen.Code{jen.Op("*").Id(iface.instrumentedStructName)},
+		jen.Return().Op("&").Id(iface.instrumentedStructName).Values(
 			jen.Id(iface.Name).Op(":").Id("inner"),
 			jen.Id("reporter").Op(":").Id("reporter"),
 		),
 	)
+
+	return generation.Compose(comment, decl)
 }
 
-func generateInstrumentedMethod(iface *types.Interface, method *types.Method, instrumentedStructName string, prefix string) jen.Code {
+//
+// Instrumented Method Generation
+
+func generateInstrumentedMethod(iface *wrappedInterface, method *wrappedMethod) jen.Code {
+	comment := generation.GenerateComment(
+		1,
+		"%s delegates to the wrapped implementation and emits metrics with the prefix '%s'.",
+		method.Name,
+		method.prefix,
+	)
+
 	errorInterface := getErrorInterface()
 
 	errArgument := jen.Nil()
 	if len(method.Results) > 0 {
-		lastResult := method.Results[len(method.Results)-1]
-
-		if gotypes.Implements(lastResult, errorInterface) {
+		if gotypes.Implements(method.Results[len(method.Results)-1], errorInterface) {
 			errArgument = jen.Id(fmt.Sprintf("r%d", len(method.Results)-1))
 		}
 	}
@@ -142,13 +222,13 @@ func generateInstrumentedMethod(iface *types.Interface, method *types.Method, in
 		Id("i").
 		Dot("reporter").
 		Dot("ReportRequest").
-		Call(jen.Lit(prefix))
+		Call(jen.Lit(method.prefix))
 
 	emitErrorMetric := jen.
 		Id("i").
 		Dot("reporter").
 		Dot("ReportError").
-		Call(jen.Lit(prefix), errArgument)
+		Call(jen.Lit(method.prefix), errArgument)
 
 	setDuration := jen.
 		Id("duration").
@@ -163,24 +243,40 @@ func generateInstrumentedMethod(iface *types.Interface, method *types.Method, in
 		Id("i").
 		Dot("reporter").
 		Dot("ReportDuration").
-		Call(jen.Lit(prefix), jen.Id("duration"))
+		Call(jen.Lit(method.prefix), jen.Id("duration"))
 
-	return generation.GenerateOverride(
-		"i",
-		instrumentedStructName,
+	override := generation.GenerateOverride(
+		jen.Id("i").Op("*").Id(iface.instrumentedStructName),
 		iface.ImportPath,
-		method,
+		method.Method,
 		jen.Id("start").Op(":=").Qual("time", "Now").Call(),
 		emitRequestMetric,
-		generation.GenerateDecoratedCall(method, jen.Id("i").Dot(iface.Name).Dot(method.Name)),
+		generation.GenerateDecoratedCall(method.Method, jen.Id("i").Dot(iface.Name).Dot(method.Name)),
 		setDuration,
 		emitErrorMetric,
 		emitDurationMetric,
-		generation.GenerateDecoratedReturn(method),
+		generation.GenerateDecoratedReturn(method.Method),
 	)
+
+	return generation.Compose(comment, override)
+}
+
+//
+// Helpers
+
+func title(s string) string {
+	if s == "" {
+		return s
+	}
+
+	return strings.ToUpper(string(s[0])) + s[1:]
 }
 
 func getErrorInterface() *gotypes.Interface {
+	return getErrorType().Underlying().(*gotypes.Interface)
+}
+
+func getErrorType() gotypes.Type {
 	errorSource := `
 	package error
 
@@ -197,18 +293,10 @@ func getErrorInterface() *gotypes.Interface {
 		panic(err.Error())
 	}
 
-	pkg, err := conf.Check("error", fset, []*ast.File{file}, nil)
+	pkg, err := conf.Check("mock-error", fset, []*ast.File{file}, nil)
 	if err != nil {
 		panic(err.Error())
 	}
 
-	return pkg.Scope().Lookup("Error").Type().Underlying().(*gotypes.Interface)
-}
-
-func title(s string) string {
-	if s == "" {
-		return s
-	}
-
-	return strings.ToUpper(string(s[0])) + s[1:]
+	return pkg.Scope().Lookup("Error").Type()
 }
