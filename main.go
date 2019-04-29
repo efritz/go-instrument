@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/alecthomas/kingpin"
-
 	"github.com/dave/jennifer/jen"
 	"github.com/efritz/go-genlib/command"
 	"github.com/efritz/go-genlib/generation"
@@ -19,6 +18,10 @@ import (
 )
 
 type (
+	generator struct {
+		outputImportPath string
+	}
+
 	wrappedInterface struct {
 		*types.Interface
 		prefix                 string
@@ -46,17 +49,6 @@ const (
 	instrumentedStructFormat = "Instrumented%s%s"
 )
 
-var (
-	topLevelGenerators = []topLevelGenerator{
-		generateStruct,
-		generateConstructor,
-	}
-
-	methodGenerators = []methodGenerator{
-		generateInstrumentedMethod,
-	}
-)
-
 func init() {
 	log.SetFlags(0)
 	log.SetPrefix("go-instrument: ")
@@ -70,13 +62,17 @@ func main() {
 	}
 
 	generate := func(ifaces []*types.Interface, opts *command.Options) error {
+		g := &generator{
+			outputImportPath: opts.OutputImportPath,
+		}
+
 		return generation.Generate(
 			packageName,
 			version,
 			ifaces,
 			opts,
 			generateFilename,
-			generateInterface(*prefixValues),
+			g.generateInterface(*prefixValues),
 		)
 	}
 
@@ -89,13 +85,22 @@ func generateFilename(name string) string {
 	return fmt.Sprintf("%s_instrumented.go", name)
 }
 
-func generateInterface(prefixValues PrefixValues) generation.InterfaceGenerator {
+func (g *generator) generateInterface(prefixValues PrefixValues) generation.InterfaceGenerator {
 	return func(file *jen.File, iface *types.Interface, prefix string) {
 		var (
 			titleName              = title(iface.Name)
 			instrumentedStructName = fmt.Sprintf(instrumentedStructFormat, prefix, titleName)
 			wrappedInterface       = wrapInterface(iface, prefix, titleName, instrumentedStructName, prefixValues)
 		)
+
+		topLevelGenerators := []topLevelGenerator{
+			g.generateStruct,
+			g.generateConstructor,
+		}
+
+		methodGenerators := []methodGenerator{
+			g.generateInstrumentedMethod,
+		}
 
 		for _, generator := range topLevelGenerators {
 			file.Add(generator(wrappedInterface))
@@ -147,7 +152,7 @@ func wrapMethod(iface *types.Interface, method *types.Method, prefix string) *wr
 //
 // Instrumented Struct Generation
 
-func generateStruct(iface *wrappedInterface) jen.Code {
+func (g *generator) generateStruct(iface *wrappedInterface) jen.Code {
 	comment := generation.GenerateComment(
 		1,
 		"%s is an wrapper around the %s interface (from the package %s) that emits request, duration, and error metrics.",
@@ -157,7 +162,7 @@ func generateStruct(iface *wrappedInterface) jen.Code {
 	)
 
 	fields := []jen.Code{
-		jen.Qual(iface.ImportPath, iface.Name),
+		jen.Qual(generation.SanitizeImportPath(iface.ImportPath, g.outputImportPath), iface.Name),
 		jen.Id("reporter").Op("*").Qual("github.com/efritz/imperial/red", "Reporter"),
 	}
 
@@ -170,7 +175,7 @@ func generateStruct(iface *wrappedInterface) jen.Code {
 //
 // Constructor Generation
 
-func generateConstructor(iface *wrappedInterface) jen.Code {
+func (g *generator) generateConstructor(iface *wrappedInterface) jen.Code {
 	name := fmt.Sprintf("New%s", iface.instrumentedStructName)
 
 	comment := generation.GenerateComment(
@@ -201,7 +206,7 @@ func generateConstructor(iface *wrappedInterface) jen.Code {
 //
 // Instrumented Method Generation
 
-func generateInstrumentedMethod(iface *wrappedInterface, method *wrappedMethod) jen.Code {
+func (g *generator) generateInstrumentedMethod(iface *wrappedInterface, method *wrappedMethod) jen.Code {
 	comment := generation.GenerateComment(
 		1,
 		"%s delegates to the wrapped implementation and emits metrics with the prefix '%s'.",
@@ -248,6 +253,7 @@ func generateInstrumentedMethod(iface *wrappedInterface, method *wrappedMethod) 
 	override := generation.GenerateOverride(
 		jen.Id("i").Op("*").Id(iface.instrumentedStructName),
 		iface.ImportPath,
+		g.outputImportPath,
 		method.Method,
 		jen.Id("start").Op(":=").Qual("time", "Now").Call(),
 		emitRequestMetric,

@@ -54,7 +54,8 @@ func (s *GenerationSuite) TestGenerateInterface(t sweet.T) {
 	}
 
 	file := jen.NewFile("test")
-	generateInterface(TestPrefixValues)(file, makeBareInterface(TestMethodDo, TestMethodTry), TestPrefix)
+	g := &generator{""}
+	g.generateInterface(TestPrefixValues)(file, makeBareInterface(TestMethodDo, TestMethodTry), TestPrefix)
 	rendered := fmt.Sprintf("%#v\n", file)
 
 	for _, decl := range expectedDecls {
@@ -63,7 +64,8 @@ func (s *GenerationSuite) TestGenerateInterface(t sweet.T) {
 }
 
 func (s *GenerationSuite) TestGenerateStruct(t sweet.T) {
-	code := generateStruct(makeInterface())
+	g := &generator{""}
+	code := g.generateStruct(makeInterface())
 
 	Expect(fmt.Sprintf("%#v", code)).To(Equal(strip(`
 	// InstrumentedTestClient is an wrapper around the Client interface (from
@@ -77,7 +79,8 @@ func (s *GenerationSuite) TestGenerateStruct(t sweet.T) {
 }
 
 func (s *GenerationSuite) TestGenerateConstructor(t sweet.T) {
-	code := generateConstructor(makeInterface())
+	g := &generator{""}
+	code := g.generateConstructor(makeInterface())
 
 	Expect(fmt.Sprintf("%#v", code)).To(Equal(strip(`
 	// NewInstrumentedTestClient creates a new instrumented version of the
@@ -89,7 +92,8 @@ func (s *GenerationSuite) TestGenerateConstructor(t sweet.T) {
 }
 
 func (s *GenerationSuite) TestGenerateInstrumentedMethod(t sweet.T) {
-	code := generateInstrumentedMethod(makeMethod(TestMethodDo))
+	g := &generator{""}
+	code := g.generateInstrumentedMethod(makeMethod(TestMethodDo))
 
 	Expect(fmt.Sprintf("%#v", code)).To(Equal(strip(`
 	// Do delegates to the wrapped implementation and emits metrics with the
@@ -107,7 +111,8 @@ func (s *GenerationSuite) TestGenerateInstrumentedMethod(t sweet.T) {
 }
 
 func (s *GenerationSuite) TestGenerateInstrumentedMethodNoError(t sweet.T) {
-	code := generateInstrumentedMethod(makeMethod(TestMethodTry))
+	g := &generator{""}
+	code := g.generateInstrumentedMethod(makeMethod(TestMethodTry))
 
 	Expect(fmt.Sprintf("%#v", code)).To(Equal(strip(`
 	// Try delegates to the wrapped implementation and emits metrics with the
